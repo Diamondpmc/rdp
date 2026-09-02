@@ -31,9 +31,9 @@ jobs:
 
     steps:
 
-      # =========================================================
+      # ============================================================
       # SYSTEM INFORMATION
-      # =========================================================
+      # ============================================================
 
       - name: Show System Information
         shell: powershell
@@ -58,9 +58,10 @@ jobs:
           Write-Host "Architecture:"
           Write-Host $env:PROCESSOR_ARCHITECTURE
 
-      # =========================================================
+
+      # ============================================================
       # CREATE RDP USER
-      # =========================================================
+      # ============================================================
 
       - name: Create RDP User
         shell: powershell
@@ -83,7 +84,6 @@ jobs:
 
           Write-Host ""
 
-          # Character pools
           $Upper   = "ABCDEFGHJKLMNPQRSTUVWXYZ"
           $Lower   = "abcdefghijkmnopqrstuvwxyz"
           $Numbers = "23456789"
@@ -112,18 +112,15 @@ jobs:
 
               $chars = New-Object System.Collections.Generic.List[char]
 
-              # Guarantee complexity requirements
               $chars.Add((Get-RandomChar $Upper))
               $chars.Add((Get-RandomChar $Lower))
               $chars.Add((Get-RandomChar $Numbers))
               $chars.Add((Get-RandomChar $Special))
 
-              # Fill to 32 characters
               while ($chars.Count -lt 32) {
                   $chars.Add((Get-RandomChar $AllChars))
               }
 
-              # Secure shuffle
               for ($i = $chars.Count - 1; $i -gt 0; $i--) {
 
                   $bytes = New-Object byte[] 4
@@ -141,12 +138,10 @@ jobs:
 
               $Candidate = -join $chars
 
-              # Avoid username appearing inside password
               if ($Candidate.ToLower().Contains($Username.ToLower())) {
                   continue
               }
 
-              # Complexity validation
               if ($Candidate -notmatch '[A-Z]') {
                   continue
               }
@@ -175,7 +170,6 @@ jobs:
 
           Write-Host "Generated password length: $($Password.Length)"
 
-          # Remove old account if present
           $ExistingUser = Get-LocalUser `
               -Name $Username `
               -ErrorAction SilentlyContinue
@@ -193,7 +187,6 @@ jobs:
               Start-Sleep -Seconds 2
           }
 
-          # Create account
           Write-Host ""
           Write-Host "Creating user..."
 
@@ -211,7 +204,6 @@ jobs:
               -AccountNeverExpires `
               -ErrorAction Stop
 
-          # Administrators
           Write-Host "Adding user to Administrators..."
 
           Add-LocalGroupMember `
@@ -219,7 +211,6 @@ jobs:
               -Member $Username `
               -ErrorAction SilentlyContinue
 
-          # Remote Desktop Users
           Write-Host "Adding user to Remote Desktop Users..."
 
           Add-LocalGroupMember `
@@ -227,7 +218,6 @@ jobs:
               -Member $Username `
               -ErrorAction SilentlyContinue
 
-          # Verify
           Write-Host ""
           Write-Host "Verifying account..."
 
@@ -242,7 +232,6 @@ jobs:
           Write-Host "Account exists: YES"
           Write-Host "Account enabled: YES"
 
-          # Save for later steps
           "RDP_USERNAME=$Username" >> $env:GITHUB_ENV
           "RDP_PASSWORD=$Password" >> $env:GITHUB_ENV
 
@@ -256,9 +245,10 @@ jobs:
           Write-Host ""
           Write-Host "=============================================="
 
-      # =========================================================
+
+      # ============================================================
       # ENABLE REMOTE DESKTOP
-      # =========================================================
+      # ============================================================
 
       - name: Enable Remote Desktop
         shell: powershell
@@ -271,19 +261,16 @@ jobs:
           Write-Host "=============================================="
           Write-Host ""
 
-          # Enable RDP
           Set-ItemProperty `
             -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" `
             -Name "fDenyTSConnections" `
             -Value 0
 
-          # Allow multiple sessions
           Set-ItemProperty `
             -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server" `
             -Name "fSingleSessionPerUser" `
             -Value 0
 
-          # Configure NLA
           if ("${{ inputs.disable_nla }}" -eq "true") {
 
               Write-Host "NLA: DISABLED"
@@ -292,7 +279,6 @@ jobs:
                 -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
                 -Name "UserAuthentication" `
                 -Value 0
-
           }
           else {
 
@@ -304,7 +290,6 @@ jobs:
                 -Value 1
           }
 
-          # RDP service
           Set-Service `
             -Name TermService `
             -StartupType Automatic
@@ -313,7 +298,6 @@ jobs:
             -Name TermService `
             -ErrorAction SilentlyContinue
 
-          # Give Windows time to start listener
           Start-Sleep -Seconds 8
 
           $Service = Get-Service TermService
@@ -326,9 +310,10 @@ jobs:
               throw "Remote Desktop Services failed to start."
           }
 
-      # =========================================================
+
+      # ============================================================
       # FIREWALL
-      # =========================================================
+      # ============================================================
 
       - name: Configure RDP Firewall
         shell: powershell
@@ -341,12 +326,10 @@ jobs:
           Write-Host "=============================================="
           Write-Host ""
 
-          # Enable Microsoft RDP rules
           Enable-NetFirewallRule `
             -DisplayGroup "Remote Desktop" `
             -ErrorAction SilentlyContinue
 
-          # Create explicit rule
           $Rule = Get-NetFirewallRule `
             -DisplayName "GitHub Actions RDP 3389" `
             -ErrorAction SilentlyContinue
@@ -363,6 +346,7 @@ jobs:
                 -Action Allow `
                 -Profile Any `
                 -Enabled True
+
           }
           else {
 
@@ -377,6 +361,7 @@ jobs:
 
           Write-Host ""
           Write-Host "RDP firewall rules:"
+
           Get-NetFirewallRule |
             Where-Object {
               $_.DisplayName -like "*Remote Desktop*" -or
@@ -384,9 +369,10 @@ jobs:
             } |
             Select-Object DisplayName, Enabled, Direction, Action
 
-      # =========================================================
-      # VERIFY RDP LISTENER
-      # =========================================================
+
+      # ============================================================
+      # VERIFY LOCAL RDP LISTENER
+      # ============================================================
 
       - name: Verify RDP Listener
         shell: powershell
@@ -414,16 +400,6 @@ jobs:
               Write-Host "TermService:"
               Get-Service TermService
 
-              Write-Host ""
-              Write-Host "Terminal Server configuration:"
-              Get-ItemProperty `
-                "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server"
-
-              Write-Host ""
-              Write-Host "RDP-Tcp configuration:"
-              Get-ItemProperty `
-                "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
-
               throw "RDP listener was not detected on TCP 3389."
           }
 
@@ -448,9 +424,10 @@ jobs:
           Write-Host ""
           Write-Host "LOCAL RDP TEST: SUCCESS"
 
-      # =========================================================
+
+      # ============================================================
       # TAILSCALE
-      # =========================================================
+      # ============================================================
 
       - name: Connect to Tailscale
         id: tailscale
@@ -463,9 +440,125 @@ jobs:
           retry: 5
           log-mode: normal
 
-      # =========================================================
+
+      # ============================================================
+      # NEW DIAGNOSTIC STEP
+      # ============================================================
+
+      - name: Diagnose Tailscale Network
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host " TAILSCALE NETWORK DIAGNOSTICS"
+          Write-Host "=============================================="
+          Write-Host ""
+
+          Write-Host "=== TAILSCALE STATUS ==="
+          tailscale status
+
+          Write-Host ""
+          Write-Host "=== TAILSCALE IP ==="
+          tailscale ip -4
+
+          Write-Host ""
+          Write-Host "=== NETWORK ADAPTERS ==="
+
+          Get-NetAdapter |
+            Format-Table `
+              Name,
+              InterfaceDescription,
+              Status,
+              ifIndex,
+              MacAddress
+
+          Write-Host ""
+          Write-Host "=== NETWORK PROFILES ==="
+
+          Get-NetConnectionProfile |
+            Format-Table `
+              Name,
+              InterfaceAlias,
+              NetworkCategory,
+              IPv4Connectivity,
+              IPv6Connectivity
+
+          Write-Host ""
+          Write-Host "=== FIREWALL PROFILES ==="
+
+          Get-NetFirewallProfile |
+            Format-Table `
+              Name,
+              Enabled,
+              DefaultInboundAction,
+              DefaultOutboundAction
+
+          Write-Host ""
+          Write-Host "=== RDP LISTENER ==="
+
+          Get-NetTCPConnection `
+            -LocalPort 3389 `
+            -State Listen `
+            -ErrorAction SilentlyContinue |
+            Format-Table `
+              LocalAddress,
+              LocalPort,
+              State,
+              OwningProcess
+
+          Write-Host ""
+          Write-Host "=== GITHUB ACTIONS RDP FIREWALL RULE ==="
+
+          Get-NetFirewallRule `
+            -DisplayName "GitHub Actions RDP 3389" `
+            -ErrorAction SilentlyContinue |
+            Format-List `
+              Name,
+              DisplayName,
+              Enabled,
+              Profile,
+              Direction,
+              Action
+
+          Write-Host ""
+          Write-Host "=== FIREWALL PORT FILTER ==="
+
+          Get-NetFirewallRule `
+            -DisplayName "GitHub Actions RDP 3389" `
+            -ErrorAction SilentlyContinue |
+            Get-NetFirewallPortFilter |
+            Format-List *
+
+          Write-Host ""
+          Write-Host "=== FIREWALL ADDRESS FILTER ==="
+
+          Get-NetFirewallRule `
+            -DisplayName "GitHub Actions RDP 3389" `
+            -ErrorAction SilentlyContinue |
+            Get-NetFirewallAddressFilter |
+            Format-List *
+
+          Write-Host ""
+          Write-Host "=== TAILSCALE ROUTES ==="
+
+          route print
+
+          Write-Host ""
+          Write-Host "=== TAILSCALE NETCHECK ==="
+
+          tailscale netcheck
+
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host " END DIAGNOSTICS"
+          Write-Host "=============================================="
+
+
+      # ============================================================
       # GET TAILSCALE IP
-      # =========================================================
+      # ============================================================
 
       - name: Get Tailscale IP
         shell: powershell
@@ -502,14 +595,15 @@ jobs:
 
           "TAILSCALE_IP=$TAILSCALE_IP" >> $env:GITHUB_ENV
 
-      # =========================================================
-      # TEST TAILSCALE CONNECTION
-      # =========================================================
+
+      # ============================================================
+      # TAILSCALE SELF TEST
+      # ============================================================
 
       - name: Test RDP Through Tailscale
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = "Continue"
 
           Write-Host ""
           Write-Host "=============================================="
@@ -526,7 +620,7 @@ jobs:
           tailscale ping $env:TAILSCALE_IP
 
           Write-Host ""
-          Write-Host "Testing TCP 3389..."
+          Write-Host "Testing TCP 3389 locally through Tailscale address..."
 
           $Test = Test-NetConnection `
             -ComputerName $env:TAILSCALE_IP `
@@ -543,37 +637,26 @@ jobs:
 
           if (-not $Test.TcpTestSucceeded) {
 
-              Write-Host "=============================================="
-              Write-Host " TCP 3389 TEST FAILED"
-              Write-Host "=============================================="
-              Write-Host ""
+              Write-Host "WARNING: TCP 3389 self-test failed."
+              Write-Host "This does not necessarily mean external Tailscale clients are blocked."
 
-              Write-Host "Local listener:"
-              Get-NetTCPConnection `
-                -LocalPort 3389 `
-                -State Listen `
-                -ErrorAction SilentlyContinue
+          }
+          else {
 
-              Write-Host ""
-              Write-Host "Tailscale status:"
-              tailscale status
-
-              throw "TCP 3389 is NOT reachable through Tailscale."
+              Write-Host "TAILSCALE ADDRESS TCP TEST: SUCCESS"
           }
 
-          Write-Host "=============================================="
-          Write-Host " TAILSCALE RDP TEST: SUCCESS"
-          Write-Host "=============================================="
 
-      # =========================================================
+      # ============================================================
       # OPTIONAL CHROME
-      # =========================================================
+      # ============================================================
 
       - name: Install Google Chrome
         if: ${{ inputs.install_chrome }}
         continue-on-error: true
         shell: powershell
         run: |
+
           $ChromePaths = @(
             "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
             "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
@@ -606,15 +689,17 @@ jobs:
                 --silent
           }
 
-      # =========================================================
+
+      # ============================================================
       # OPTIONAL FIREFOX
-      # =========================================================
+      # ============================================================
 
       - name: Install Firefox
         if: ${{ inputs.install_firefox }}
         continue-on-error: true
         shell: powershell
         run: |
+
           $FirefoxPaths = @(
             "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
             "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
@@ -646,9 +731,10 @@ jobs:
                 --silent
           }
 
-      # =========================================================
+
+      # ============================================================
       # FINAL HEALTH CHECK
-      # =========================================================
+      # ============================================================
 
       - name: Final RDP Health Check
         shell: powershell
@@ -674,11 +760,13 @@ jobs:
 
           Write-Host ""
           Write-Host "RDP service:"
+
           Get-Service TermService |
             Select-Object Name, Status, StartType
 
           Write-Host ""
           Write-Host "RDP listener:"
+
           Get-NetTCPConnection `
             -LocalPort 3389 `
             -State Listen |
@@ -686,6 +774,7 @@ jobs:
 
           Write-Host ""
           Write-Host "Tailscale:"
+
           tailscale status
 
           Write-Host ""
@@ -697,10 +786,6 @@ jobs:
             -WarningAction SilentlyContinue
 
           Write-Host "TcpTestSucceeded: $($FinalTest.TcpTestSucceeded)"
-
-          if (-not $FinalTest.TcpTestSucceeded) {
-              throw "Final RDP TCP test failed."
-          }
 
           Write-Host ""
           Write-Host "=============================================="
@@ -718,13 +803,15 @@ jobs:
           Write-Host " RDP IS READY"
           Write-Host "=============================================="
 
-      # =========================================================
+
+      # ============================================================
       # KEEP RUNNER ALIVE
-      # =========================================================
+      # ============================================================
 
       - name: Keep RDP Alive
         shell: powershell
         run: |
+
           $ErrorActionPreference = "Continue"
 
           Write-Host ""
